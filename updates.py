@@ -1,135 +1,40 @@
- => [5/9] RUN pip install --no-cache-dir     torch==2.1.2+cu118     torchvision==0.16.2+cu118     torchaudio==2.1.2+cu118     --index-url https://download.pytorch.org/whl/cu118                                                   129.6s
- => [6/9] COPY requirements.txt .                                                                                                                                                                                                   11.2s
- => ERROR [7/9] RUN pip install --no-cache-dir     nemo_toolkit[asr]==2.4.0     fastapi==0.115.0     "uvicorn[standard]==0.30.6"     websockets==12.0     webrtcvad==2.0.10     numpy>=1.24.0     soundfile>=0.12.1                 62.4s
+(base) root@EC03-E01-AICOE1:/home/CORP/re_nikitav/parakeet-asr-multilingual# docker build -t parakeet_asr_realtime .
+[+] Building 236.7s (13/15)                                                                                                                                                                                                docker:default
+ => [internal] load build definition from Dockerfile                                                                                                                                                                                 0.0s
+ => => transferring dockerfile: 2.34kB                                                                                                                                                                                               0.0s
+ => [internal] load metadata for nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04                                                                                                                                               1.2s
+ => [auth] nvidia/cuda:pull token for nvcr.io                                                                                                                                                                                        0.0s
+ => [internal] load .dockerignore                                                                                                                                                                                                    0.0s
+ => => transferring context: 2B                                                                                                                                                                                                      0.0s
+ => CACHED [ 1/10] FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04@sha256:85fb7ac694079fff1061a0140fd5b5a641997880e12112d92589c3bbb1e8b7ca                                                                                0.0s
+ => [internal] load build context                                                                                                                                                                                                    0.0s
+ => => transferring context: 9.59kB                                                                                                                                                                                                  0.0s
+ => [ 2/10] RUN apt-get update && apt-get install -y --no-install-recommends         python3.10         python3.10-dev         python3-pip         python3.10-distutils         build-essential         gcc         g++         f  103.9s
+ => [ 3/10] RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1  && update-alternatives --install /usr/bin/pip    pip    /usr/bin/pip3      1                                                             0.4s
+ => [ 4/10] RUN pip install --no-cache-dir --upgrade pip setuptools wheel                                                                                                                                                            3.5s
+ => [ 5/10] WORKDIR /app                                                                                                                                                                                                             0.2s
+ => [ 6/10] RUN pip install --no-cache-dir     torch==2.1.2+cu118     torchvision==0.16.2+cu118     torchaudio==2.1.2+cu118     --index-url https://download.pytorch.org/whl/cu118                                                 113.5s
+ => [ 7/10] COPY requirements.txt .                                                                                                                                                                                                 11.9s
+ => ERROR [ 8/10] RUN pip install --no-cache-dir -r requirements.txt                                                                                                                                                                 2.0s
 ------
- > [7/9] RUN pip install --no-cache-dir     nemo_toolkit[asr]==2.4.0     fastapi==0.115.0     "uvicorn[standard]==0.30.6"     websockets==12.0     webrtcvad==2.0.10     numpy>=1.24.0     soundfile>=0.12.1:
-55.48   error: subprocess-exited-with-error
-55.48
-55.48   × python setup.py bdist_wheel did not run successfully.
-55.48   │ exit code: 1
-55.48   ╰─> [16 lines of output]
-55.48       running bdist_wheel
-55.48       running build
-55.48       running build_py
-55.48       creating build
-55.48       creating build/lib.linux-x86_64-3.10
-55.48       copying webrtcvad.py -> build/lib.linux-x86_64-3.10
-55.48       running build_ext
-55.48       building '_webrtcvad' extension
-55.48       creating build/temp.linux-x86_64-3.10
-55.48       creating build/temp.linux-x86_64-3.10/cbits
-55.48       creating build/temp.linux-x86_64-3.10/cbits/webrtc
-55.48       creating build/temp.linux-x86_64-3.10/cbits/webrtc/common_audio
-55.48       creating build/temp.linux-x86_64-3.10/cbits/webrtc/common_audio/signal_processing
-55.48       creating build/temp.linux-x86_64-3.10/cbits/webrtc/common_audio/vad
-55.48       x86_64-linux-gnu-gcc -Wno-unused-result -Wsign-compare -DNDEBUG -g -fwrapv -O2 -Wall -g -fstack-protector-strong -Wformat -Werror=format-security -g -fwrapv -O2 -g -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2 -fPIC -DWEBRTC_POSIX -Icbits -I/usr/include/python3.10 -c cbits/pywebrtcvad.c -o build/temp.linux-x86_64-3.10/cbits/pywebrtcvad.o
-55.48       error: command 'x86_64-linux-gnu-gcc' failed: No such file or directory
-55.48       [end of output]
-55.48
-55.48   note: This error originates from a subprocess, and is likely not a problem with pip.
-55.48   ERROR: Failed building wheel for webrtcvad
-56.44   error: subprocess-exited-with-error
-56.44
-56.44   × python setup.py bdist_wheel did not run successfully.
-56.44   │ exit code: 1
-56.44   ╰─> [48 lines of output]
-56.44       /usr/lib/python3/dist-packages/setuptools/installer.py:27: SetuptoolsDeprecationWarning: setuptools.installer is deprecated. Requirements should be satisfied by a PEP 517 installer.
-56.44         warnings.warn(
-56.44       running bdist_wheel
-56.44       running build
-56.44       running build_py
-56.44       creating build
-56.44       creating build/lib.linux-x86_64-3.10
-56.44       creating build/lib.linux-x86_64-3.10/texterrors
-56.44       copying texterrors/__init__.py -> build/lib.linux-x86_64-3.10/texterrors
-56.44       copying texterrors/texterrors.py -> build/lib.linux-x86_64-3.10/texterrors
-56.44       running build_ext
-56.44       creating tmp
-56.44       x86_64-linux-gnu-gcc -Wno-unused-result -Wsign-compare -DNDEBUG -g -fwrapv -O2 -Wall -g -fstack-protector-strong -Wformat -Werror=format-security -g -fwrapv -O2 -g -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2 -fPIC -I/usr/include/python3.10 -c /tmp/tmpjeh6ku0k.cpp -o tmp/tmpjeh6ku0k.o -std=c++14
-56.44       x86_64-linux-gnu-gcc -Wno-unused-result -Wsign-compare -DNDEBUG -g -fwrapv -O2 -Wall -g -fstack-protector-strong -Wformat -Werror=format-security -g -fwrapv -O2 -g -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2 -fPIC -I/usr/include/python3.10 -c /tmp/tmpxjm4o8jx.cpp -o tmp/tmpxjm4o8jx.o -std=c++11
-56.44       Traceback (most recent call last):
-56.44         File "<string>", line 2, in <module>
-56.44         File "<pip-setuptools-caller>", line 34, in <module>
-56.44         File "/tmp/pip-install-p_9zw7a2/texterrors_de992c6e153f4dbcb83919fde2bceb7c/setup.py", line 101, in <module>
-56.44           setup(
-56.44         File "/usr/lib/python3/dist-packages/setuptools/__init__.py", line 153, in setup
-56.44           return distutils.core.setup(**attrs)
-56.44         File "/usr/lib/python3.10/distutils/core.py", line 148, in setup
-56.44           dist.run_commands()
-56.44         File "/usr/lib/python3.10/distutils/dist.py", line 966, in run_commands
-56.44           self.run_command(cmd)
-56.44         File "/usr/lib/python3.10/distutils/dist.py", line 985, in run_command
-56.44           cmd_obj.run()
-56.44         File "/usr/lib/python3/dist-packages/wheel/bdist_wheel.py", line 299, in run
-56.44           self.run_command('build')
-56.44         File "/usr/lib/python3.10/distutils/cmd.py", line 313, in run_command
-56.44           self.distribution.run_command(command)
-56.44         File "/usr/lib/python3.10/distutils/dist.py", line 985, in run_command
-56.44           cmd_obj.run()
-56.44         File "/usr/lib/python3.10/distutils/command/build.py", line 135, in run
-56.44           self.run_command(cmd_name)
-56.44         File "/usr/lib/python3.10/distutils/cmd.py", line 313, in run_command
-56.44           self.distribution.run_command(command)
-56.44         File "/usr/lib/python3.10/distutils/dist.py", line 985, in run_command
-56.44           cmd_obj.run()
-56.44         File "/usr/lib/python3/dist-packages/setuptools/command/build_ext.py", line 79, in run
-56.44           _build_ext.run(self)
-56.44         File "/usr/lib/python3.10/distutils/command/build_ext.py", line 340, in run
-56.44           self.build_extensions()
-56.44         File "/tmp/pip-install-p_9zw7a2/texterrors_de992c6e153f4dbcb83919fde2bceb7c/setup.py", line 80, in build_extensions
-56.44           opts.append(cpp_flag(self.compiler))
-56.44         File "/tmp/pip-install-p_9zw7a2/texterrors_de992c6e153f4dbcb83919fde2bceb7c/setup.py", line 62, in cpp_flag
-56.44           raise RuntimeError(
-56.44       RuntimeError: Unsupported compiler -- at least C++11 support is needed!
-56.44       [end of output]
-56.44
-56.44   note: This error originates from a subprocess, and is likely not a problem with pip.
-56.44   ERROR: Failed building wheel for texterrors
-60.71   error: subprocess-exited-with-error
-60.71
-60.71   × Running setup.py install for webrtcvad did not run successfully.
-60.71   │ exit code: 1
-60.71   ╰─> [18 lines of output]
-60.71       running install
-60.71       /usr/lib/python3/dist-packages/setuptools/command/install.py:34: SetuptoolsDeprecationWarning: setup.py install is deprecated. Use build and pip and other standards-based tools.
-60.71         warnings.warn(
-60.71       running build
-60.71       running build_py
-60.71       creating build
-60.71       creating build/lib.linux-x86_64-3.10
-60.71       copying webrtcvad.py -> build/lib.linux-x86_64-3.10
-60.71       running build_ext
-60.71       building '_webrtcvad' extension
-60.71       creating build/temp.linux-x86_64-3.10
-60.71       creating build/temp.linux-x86_64-3.10/cbits
-60.71       creating build/temp.linux-x86_64-3.10/cbits/webrtc
-60.71       creating build/temp.linux-x86_64-3.10/cbits/webrtc/common_audio
-60.71       creating build/temp.linux-x86_64-3.10/cbits/webrtc/common_audio/signal_processing
-60.71       creating build/temp.linux-x86_64-3.10/cbits/webrtc/common_audio/vad
-60.71       x86_64-linux-gnu-gcc -Wno-unused-result -Wsign-compare -DNDEBUG -g -fwrapv -O2 -Wall -g -fstack-protector-strong -Wformat -Werror=format-security -g -fwrapv -O2 -g -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2 -fPIC -DWEBRTC_POSIX -Icbits -I/usr/include/python3.10 -c cbits/pywebrtcvad.c -o build/temp.linux-x86_64-3.10/cbits/pywebrtcvad.o
-60.71       error: command 'x86_64-linux-gnu-gcc' failed: No such file or directory
-60.71       [end of output]
-60.71
-60.71   note: This error originates from a subprocess, and is likely not a problem with pip.
-60.71 error: legacy-install-failure
-60.71
-60.71 × Encountered error while trying to install package.
-60.71 ╰─> webrtcvad
-60.71
-60.71 note: This is an issue with the package mentioned above, not pip.
-60.71 hint: See above for output from the failure.
+ > [ 8/10] RUN pip install --no-cache-dir -r requirements.txt:
+1.085 Collecting nemo_toolkit==2.4.0 (from nemo_toolkit[asr]==2.4.0->-r requirements.txt (line 1))
+1.235   Downloading nemo_toolkit-2.4.0-py3-none-any.whl.metadata (91 kB)
+1.512 Collecting fastapi==0.115.0 (from -r requirements.txt (line 2))
+1.526   Downloading fastapi-0.115.0-py3-none-any.whl.metadata (27 kB)
+1.565 Collecting uvicorn==0.30.6 (from uvicorn[standard]==0.30.6->-r requirements.txt (line 3))
+1.579   Downloading uvicorn-0.30.6-py3-none-any.whl.metadata (6.6 kB)
+1.701 Collecting websockets==12.0 (from -r requirements.txt (line 4))
+1.748   Downloading websockets-12.0-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+1.798 ERROR: Could not find a version that satisfies the requirement webrtcvad-wheels==2.0.10.post0 (from versions: 2.0.10.post2, 2.0.11, 2.0.11.post1, 2.0.12, 2.0.13, 2.0.14)
+1.968 ERROR: No matching distribution found for webrtcvad-wheels==2.0.10.post0
 ------
-Dockerfile:39
+Dockerfile:41
 --------------------
-  38 |     # Install remaining deps (torch is already satisfied, so pip won't downgrade it)
-  39 | >>> RUN pip install --no-cache-dir \
-  40 | >>>     nemo_toolkit[asr]==2.4.0 \
-  41 | >>>     fastapi==0.115.0 \
-  42 | >>>     "uvicorn[standard]==0.30.6" \
-  43 | >>>     websockets==12.0 \
-  44 | >>>     webrtcvad==2.0.10 \
-  45 | >>>     numpy>=1.24.0 \
-  46 | >>>     soundfile>=0.12.1
-  47 |
+  39 |
+  40 |     COPY requirements.txt .
+  41 | >>> RUN pip install --no-cache-dir -r requirements.txt
+  42 |
+  43 |     # ── App ───────────────────────────────────────────────────────────────────────
 --------------------
-ERROR: failed to build: failed to solve: process "/bin/sh -c pip install --no-cache-dir     nemo_toolkit[asr]==2.4.0     fastapi==0.115.0     \"uvicorn[standard]==0.30.6\"     websockets==12.0     webrtcvad==2.0.10     numpy>=1.24.0     soundfile>=0.12.1" did not complete successfully: exit code: 1
+ERROR: failed to build: failed to solve: process "/bin/sh -c pip install --no-cache-dir -r requirements.txt" did not complete successfully: exit code: 1
