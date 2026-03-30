@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 from queue import Empty, Queue
+from typing import Optional
 
 import pyaudio
 import websockets
@@ -38,6 +39,7 @@ BANNER = r"""
 ╔══════════════════════════════════════════════════════════════╗
 ║        Parakeet-TDT-0.6B-v3  |  Real-Time ASR Client        ║
 ║          English & Spanish auto-detection                    ║
+║          WebSocket: ws://localhost:8001/ws                   ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -46,6 +48,10 @@ Commands
   [Enter]   Manual flush – force transcription of buffered audio
   q         Quit
   d         List available audio input devices
+
+Test phrases
+  EN: "The quick brown fox jumps over the lazy dog"
+  ES: "El zorro marrón rápido salta sobre el perro perezoso"
 """
 
 
@@ -54,7 +60,7 @@ Commands
 class MicCapture:
     """Captures microphone audio into a thread-safe queue."""
 
-    def __init__(self, device_index: int | None = None):
+    def __init__(self, device_index: Optional[int] = None):
         self.queue: Queue[bytes] = Queue(maxsize=512)
         self._stop = threading.Event()
         self._device = device_index
@@ -118,7 +124,7 @@ def stdin_reader(cmd_queue: Queue):
 
 # ── WebSocket sender ───────────────────────────────────────────────────────────
 
-async def run(host: str, port: int, device_index: int | None):
+async def run(host: str, port: int, device_index: Optional[int]):
     uri = f"ws://{host}:{port}/ws"
     print(BANNER)
     print(f"Connecting to {uri} …", end=" ", flush=True)
@@ -217,7 +223,7 @@ async def _receiver(ws):
 def parse_args():
     p = argparse.ArgumentParser(description="Parakeet ASR terminal client")
     p.add_argument("--host", default="localhost", help="Server host (default: localhost)")
-    p.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
+    p.add_argument("--port", type=int, default=8001, help="Server port (default: 8001)")
     p.add_argument(
         "--device",
         type=int,
