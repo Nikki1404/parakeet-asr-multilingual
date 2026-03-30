@@ -2,7 +2,7 @@ nemo_toolkit[asr]==2.4.0
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 websockets==12.0
-webrtcvad-wheels==2.0.10.post0
+webrtcvad-wheels==2.0.14
 numpy>=1.24.0
 soundfile>=0.12.1
  pyaudio==0.2.14
