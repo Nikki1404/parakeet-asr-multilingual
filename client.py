@@ -202,16 +202,21 @@ async def _receiver(ws):
             except json.JSONDecodeError:
                 continue
 
-            if msg.get("type") == "transcript":
-                text = msg.get("text", "")
-                dur_ms = msg.get("duration_ms", 0)
-                rtf = msg.get("rtf", 0)
-                ts = time.strftime("%H:%M:%S")
+            msg_type = msg.get("type", "")
+            text     = msg.get("text", "")
+            dur_ms   = msg.get("duration_ms", 0)
+            ts       = time.strftime("%H:%M:%S")
 
-                # Color output: green for English, yellow for Spanish
-                # (parakeet auto-detects; we just display as-is)
-                print(f"\n[{ts}] ({dur_ms/1000:.1f}s | RTF {rtf:.2f}x)")
-                print(f"  📝  {text}")
+            if msg_type == "partial":
+                # Overwrite same line with carriage return so it feels live
+                print(f"\r  ⏳ [{ts}] {text:<80}", end="", flush=True)
+
+            elif msg_type == "transcript":
+                rtf = msg.get("rtf", 0)
+                # Move to new line first to clear any partial still on screen
+                print(f"\r{' ' * 90}\r", end="")   # clear partial line
+                print(f"[{ts}] ({dur_ms/1000:.1f}s | RTF {rtf:.2f}x)")
+                print(f"  ✅  {text}")
                 print("─" * 64)
 
     except websockets.exceptions.ConnectionClosed:
