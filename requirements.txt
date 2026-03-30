@@ -1,0 +1,24 @@
+# ── Core ASR ──────────────────────────────────────────────────────────────────
+# NeMo ASR toolkit (includes FastConformer / Parakeet model support)
+nemo_toolkit[asr]==2.4.0
+
+# PyTorch – install the CUDA variant separately if you need GPU:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# CPU-only fallback is pulled in automatically by nemo_toolkit.
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# ── Server ────────────────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+websockets==12.0
+
+# Voice Activity Detection
+webrtcvad==2.0.10
+
+# Audio processing
+numpy>=1.24.0
+soundfile>=0.12.1
+
+# ── Client ────────────────────────────────────────────────────────────────────
+pyaudio==0.2.14
