@@ -1,9 +1,7 @@
-# ── Parakeet-TDT-0.6B-v3 Real-Time ASR Server ────────────────────────────────
-# Base: NVIDIA CUDA runtime (Ampere-compatible, CUDA 11.8)
-# Switch to nvcr.io/nvidia/cuda:12.1.0-runtime-ubuntu22.04 for Ada/Hopper GPUs.
 FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
-# ── System deps ───────────────────────────────────────────────────────────────
+ENV http_proxy="http://163.116.128.80:8080"
+ENV https_proxy="http://163.116.128.80:8080"
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3.10 \
         python3.10-dev \
