@@ -7,6 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3.10-dev \
         python3-pip \
         python3.10-distutils \
+        # C/C++ compiler – required by webrtcvad, texterrors, and other native exts
+        build-essential \
+        gcc \
+        g++ \
+        # Audio / media
         ffmpeg \
         libsndfile1 \
         libportaudio2 \
@@ -15,47 +20,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Make python3.10 the default python
+ 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 \
  && update-alternatives --install /usr/bin/pip    pip    /usr/bin/pip3      1
-
+ 
+# Upgrade pip + wheel so legacy setup.py packages build cleanly
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+ 
 # ── Python deps ───────────────────────────────────────────────────────────────
 WORKDIR /app
-
-# Install PyTorch with CUDA 11.8 support BEFORE nemo_toolkit
-# (nemo_toolkit will try to pull CPU-only torch otherwise)
+ 
+# Install PyTorch with CUDA 11.8 BEFORE nemo_toolkit
 RUN pip install --no-cache-dir \
     torch==2.1.2+cu118 \
     torchvision==0.16.2+cu118 \
     torchaudio==2.1.2+cu118 \
     --index-url https://download.pytorch.org/whl/cu118
-
+ 
 COPY requirements.txt .
-
-# Install remaining deps (torch is already satisfied, so pip won't downgrade it)
-RUN pip install --no-cache-dir \
-    nemo_toolkit[asr]==2.4.0 \
-    fastapi==0.115.0 \
-    "uvicorn[standard]==0.30.6" \
-    websockets==12.0 \
-    webrtcvad==2.0.10 \
-    numpy>=1.24.0 \
-    soundfile>=0.12.1
-
+RUN pip install --no-cache-dir -r requirements.txt
+ 
 # ── App ───────────────────────────────────────────────────────────────────────
 COPY server.py .
-
+ 
 # Pre-download model weights at build time so container starts fast
 # Comment this out if you want to pull on first run instead.
 RUN python -c "\
 import nemo.collections.asr as nemo_asr; \
 m = nemo_asr.models.ASRModel.from_pretrained('nvidia/parakeet-tdt-0.6b-v3'); \
 print('Model cached ✓')"
-
-EXPOSE 8765
-
+ 
+EXPOSE 8001
+ 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1
-
+ 
 CMD ["python", "server.py"]
