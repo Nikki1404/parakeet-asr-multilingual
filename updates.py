@@ -13,6 +13,8 @@ https://us-central1-docker.pkg.dev/v2/
 
 gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://us-central1-docker.pkg.dev
 
+find /home -name "*.json" | grep -i -E "key|service|gcp"
+
 unset http_proxy
 unset https_proxy
 unset HTTP_PROXY
