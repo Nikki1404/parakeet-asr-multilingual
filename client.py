@@ -5,10 +5,18 @@ and prints transcriptions as they arrive. Works for English & Spanish
 (parakeet-tdt-0.6b-v3 auto-detects the language).
 
 Usage:
-    python client.py [--host HOST] [--port PORT] [--device DEVICE_INDEX]
+    # Microphone mode (default)
+    python client.py
+
+    # File mode – streams audio file(s) chunk by chunk at real-time speed
+    python client.py --file english.wav
+    python client.py --file english.wav spanish.mp3
+    python client.py --file audio.wav --speed 1.5
 
 Dependencies:
-    pip install pyaudio websockets
+    pip install pyaudio websockets soundfile numpy
+    pip install pydub   (optional, for MP3/OGG)
+    apt install ffmpeg  (optional, for non-WAV resampling)
 """
 
 import argparse
@@ -18,19 +26,21 @@ import logging
 import sys
 import threading
 import time
+from pathlib import Path
 from queue import Empty, Queue
-from typing import Optional
+from typing import List, Optional
 
+import numpy as np
 import pyaudio
 import websockets
 
-# ── Config ────────────────────────────────────────────────────────────────────
-SAMPLE_RATE = 16_000
-CHANNELS = 1
-FORMAT = pyaudio.paInt16
-CHUNK_MS = 30                          # send 30 ms frames – matches server VAD
+# Config
+SAMPLE_RATE   = 16_000
+CHANNELS      = 1
+FORMAT        = pyaudio.paInt16
+CHUNK_MS      = 30
 CHUNK_SAMPLES = SAMPLE_RATE * CHUNK_MS // 1000   # 480 samples
-CHUNK_BYTES = CHUNK_SAMPLES * 2        # int16 → 2 bytes per sample
+CHUNK_BYTES   = CHUNK_SAMPLES * 2                # int16 → 2 bytes per sample
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -38,7 +48,7 @@ logger = logging.getLogger(__name__)
 BANNER = r"""
 ╔══════════════════════════════════════════════════════════════╗
 ║        Parakeet-TDT-0.6B-v3  |  Real-Time ASR Client        ║
-║          English & Spanish auto-detection                    ║
+║          Auto language detection (EN / ES / more)           ║
 ║          WebSocket: ws://localhost:8001/ws                   ║
 ╚══════════════════════════════════════════════════════════════╝
 """
@@ -55,14 +65,14 @@ Test phrases
 """
 
 
-# ── Audio capture thread ───────────────────────────────────────────────────────
+# Audio capture (mic)
 
 class MicCapture:
     """Captures microphone audio into a thread-safe queue."""
 
     def __init__(self, device_index: Optional[int] = None):
         self.queue: Queue[bytes] = Queue(maxsize=512)
-        self._stop = threading.Event()
+        self._stop   = threading.Event()
         self._device = device_index
         self._thread = threading.Thread(target=self._capture, daemon=True)
 
@@ -109,10 +119,92 @@ def list_devices():
     print()
 
 
-# ── stdin reader (non-blocking) ────────────────────────────────────────────────
+#  Audio loading (file) 
+def load_audio_as_16k_pcm(path: str) -> bytes:
+    """
+    Load any audio file → raw int16 LE PCM at 16 kHz mono.
+    Tries soundfile first (WAV/FLAC/OGG), then pydub (MP3 etc).
+    """
+    try:
+        import soundfile as sf
+        data, sr = sf.read(path, dtype="float32", always_2d=False)
+        if data.ndim == 2:
+            data = data.mean(axis=1)
+        if sr != SAMPLE_RATE:
+            data = _resample(data, sr, SAMPLE_RATE)
+        return _float32_to_pcm16(data)
+    except Exception as sf_err:
+        try:
+            from pydub import AudioSegment
+            seg = AudioSegment.from_file(path)
+            seg = seg.set_channels(1).set_frame_rate(SAMPLE_RATE).set_sample_width(2)
+            return seg.raw_data
+        except Exception as pd_err:
+            raise RuntimeError(
+                f"Cannot load '{path}'.\n"
+                f"  soundfile : {sf_err}\n"
+                f"  pydub     : {pd_err}\n"
+                f"  Tip: install ffmpeg for MP3/OGG support."
+            )
+
+
+def _resample(data: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
+    try:
+        import librosa
+        return librosa.resample(data, orig_sr=orig_sr, target_sr=target_sr)
+    except ImportError:
+        pass
+    try:
+        from scipy.signal import resample_poly
+        from math import gcd
+        g = gcd(orig_sr, target_sr)
+        return resample_poly(data, target_sr // g, orig_sr // g).astype(np.float32)
+    except ImportError:
+        pass
+    # Pure numpy linear interpolation fallback
+    duration  = len(data) / orig_sr
+    old_times = np.linspace(0, duration, len(data))
+    new_times = np.linspace(0, duration, int(duration * target_sr))
+    return np.interp(new_times, old_times, data).astype(np.float32)
+
+
+def _float32_to_pcm16(data: np.ndarray) -> bytes:
+    return (np.clip(data, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+
+
+# ── Shared receiver (same for mic and file modes)
+
+async def _receiver(ws):
+    """Receives partial + final transcripts and prints them."""
+    try:
+        async for raw in ws:
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            msg_type = msg.get("type", "")
+            text     = msg.get("text", "")
+            dur_ms   = msg.get("duration_ms", 0)
+            ts       = time.strftime("%H:%M:%S")
+
+            if msg_type == "partial":
+                print(f"\r  ⏳ [{ts}] {text:<80}", end="", flush=True)
+
+            elif msg_type == "transcript":
+                rtf = msg.get("rtf", 0)
+                print(f"\r{' ' * 90}\r", end="")
+                print(f"[{ts}] ({dur_ms/1000:.1f}s | RTF {rtf:.2f}x)")
+                print(f"  ✅  {text}")
+                print("─" * 64)
+
+    except websockets.exceptions.ConnectionClosed:
+        print("\n[Connection closed]")
+
+
+# ── stdin reader 
 
 def stdin_reader(cmd_queue: Queue):
-    """Reads lines from stdin in a background thread."""
     while True:
         try:
             line = sys.stdin.readline()
@@ -122,9 +214,9 @@ def stdin_reader(cmd_queue: Queue):
             break
 
 
-# ── WebSocket sender ───────────────────────────────────────────────────────────
+#  MODE 1 : Microphone 
 
-async def run(host: str, port: int, device_index: Optional[int]):
+async def run_mic(host: str, port: int, device_index: Optional[int]):
     uri = f"ws://{host}:{port}/ws"
     print(BANNER)
     print(f"Connecting to {uri} …", end=" ", flush=True)
@@ -139,12 +231,9 @@ async def run(host: str, port: int, device_index: Optional[int]):
             mic.start()
 
             cmd_queue: Queue[str] = Queue()
-            cmd_thread = threading.Thread(
-                target=stdin_reader, args=(cmd_queue,), daemon=True
-            )
-            cmd_thread.start()
+            threading.Thread(target=stdin_reader, args=(cmd_queue,), daemon=True).start()
 
-            send_task = asyncio.create_task(_sender(ws, mic, cmd_queue))
+            send_task = asyncio.create_task(_mic_sender(ws, mic, cmd_queue))
             recv_task = asyncio.create_task(_receiver(ws))
 
             done, pending = await asyncio.wait(
@@ -160,19 +249,16 @@ async def run(host: str, port: int, device_index: Optional[int]):
         sys.exit(1)
 
 
-async def _sender(ws, mic: MicCapture, cmd_queue: Queue):
-    """Reads from microphone queue and sends frames to server."""
+async def _mic_sender(ws, mic: MicCapture, cmd_queue: Queue):
     print(HELP)
     try:
         while True:
-            # Check for user commands
             try:
                 cmd = cmd_queue.get_nowait()
                 if cmd.lower() in ("q", "quit", "exit"):
                     print("\nBye!")
                     return
                 elif cmd == "":
-                    # Enter → manual flush
                     await ws.send(json.dumps({"cmd": "flush"}).encode())
                     print("[flushed]\n", flush=True)
                 elif cmd.lower() == "d":
@@ -180,7 +266,6 @@ async def _sender(ws, mic: MicCapture, cmd_queue: Queue):
             except Empty:
                 pass
 
-            # Drain the audio queue and send frames
             sent = 0
             while not mic.queue.empty() and sent < 50:
                 frame = mic.queue.get_nowait()
@@ -193,56 +278,108 @@ async def _sender(ws, mic: MicCapture, cmd_queue: Queue):
         print("\n[Connection closed by server]")
 
 
-async def _receiver(ws):
-    """Receives transcription messages from server and prints them."""
-    try:
-        async for raw in ws:
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
+# File streaming
+async def run_files(host: str, port: int, files: List[str], speed: float):
+    uri = f"ws://{host}:{port}/ws"
+    print(BANNER)
+    print(f"  Mode   : FILE streaming at {speed:.1f}× real-time speed")
+    print(f"  Server : {uri}")
+    print(f"  Files  : {', '.join(Path(f).name for f in files)}\n")
 
-            msg_type = msg.get("type", "")
-            text     = msg.get("text", "")
-            dur_ms   = msg.get("duration_ms", 0)
-            ts       = time.strftime("%H:%M:%S")
+    for filepath in files:
+        p = Path(filepath)
+        if not p.exists():
+            print(f"  [SKIP] File not found: {filepath}\n")
+            continue
 
-            if msg_type == "partial":
-                # Overwrite same line with carriage return so it feels live
-                print(f"\r  ⏳ [{ts}] {text:<80}", end="", flush=True)
+        # Load and resample
+        print(f"  Loading {p.name} …", end=" ", flush=True)
+        try:
+            pcm = load_audio_as_16k_pcm(str(p))
+        except RuntimeError as e:
+            print(f"FAILED ✗\n  {e}\n")
+            continue
 
-            elif msg_type == "transcript":
-                rtf = msg.get("rtf", 0)
-                # Move to new line first to clear any partial still on screen
-                print(f"\r{' ' * 90}\r", end="")   # clear partial line
-                print(f"[{ts}] ({dur_ms/1000:.1f}s | RTF {rtf:.2f}x)")
-                print(f"  ✅  {text}")
-                print("─" * 64)
+        duration_sec = len(pcm) / 2 / SAMPLE_RATE
+        print(f"{duration_sec:.1f}s  ✓")
+        print(f"\n{'═' * 64}")
+        print(f"  📄 {p.name}  ({duration_sec:.1f}s)  — language auto-detected by model")
+        print(f"{'═' * 64}\n")
 
-    except websockets.exceptions.ConnectionClosed:
-        print("\n[Connection closed]")
+        try:
+            async with websockets.connect(
+                uri, ping_interval=20, ping_timeout=20, max_size=2**23
+            ) as ws:
+                send_task = asyncio.create_task(
+                    _file_sender(ws, pcm, speed)
+                )
+                recv_task = asyncio.create_task(_receiver(ws))
+
+                # Receiver exits on ConnectionClosed; sender exits when done
+                done, pending = await asyncio.wait(
+                    [send_task, recv_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for t in pending:
+                    t.cancel()
+
+        except (OSError, websockets.exceptions.WebSocketException) as exc:
+            print(f"\n  [ERROR] WebSocket failed: {exc}")
+
+        print()   # blank line between files
+
+    print("  All files processed.")
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+async def _file_sender(ws, pcm: bytes, speed: float):
+    """Stream PCM bytes to server chunk by chunk at real-time speed."""
+    chunk_delay = (CHUNK_MS / 1000) / speed   # e.g. 0.03s at 1×, 0.015s at 2×
+    offset      = 0
+
+    while offset + CHUNK_BYTES <= len(pcm):
+        chunk   = pcm[offset: offset + CHUNK_BYTES]
+        offset += CHUNK_BYTES
+        await ws.send(chunk)
+        await asyncio.sleep(chunk_delay)
+
+    # Pad and send any leftover bytes
+    leftover = pcm[offset:]
+    if leftover:
+        await ws.send(leftover + bytes(CHUNK_BYTES - len(leftover)))
+
+    # Small pause then manual flush to force final transcript
+    await asyncio.sleep(0.3)
+    await ws.send(json.dumps({"cmd": "flush"}).encode())
+
+    # Wait long enough for the server to respond with the final transcript
+    await asyncio.sleep(10)
+
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Parakeet ASR terminal client")
-    p.add_argument("--host", default="localhost", help="Server host (default: localhost)")
-    p.add_argument("--port", type=int, default=8001, help="Server port (default: 8001)")
-    p.add_argument(
-        "--device",
-        type=int,
-        default=None,
-        metavar="INDEX",
-        help="Microphone device index (use --list to see options)",
-    )
-    p.add_argument("--list", action="store_true", help="List audio input devices and exit")
+    p = argparse.ArgumentParser(description="Parakeet ASR client – mic or file mode")
+    p.add_argument("--host",   default="localhost", help="Server host (default: localhost)")
+    p.add_argument("--port",   type=int, default=8001, help="Server port (default: 8001)")
+    p.add_argument("--device", type=int, default=None, metavar="INDEX",
+                   help="Mic device index for mic mode (see --list)")
+    p.add_argument("--list",   action="store_true",
+                   help="List audio input devices and exit")
+    p.add_argument("--file",   nargs="+", metavar="FILE",
+                   help="File mode: stream audio file(s) instead of mic "
+                        "(WAV / MP3 / FLAC / OGG)")
+    p.add_argument("--speed",  type=float, default=1.0,
+                   help="File mode: playback speed multiplier "
+                        "(default 1.0 = real-time, 2.0 = 2× faster)")
     return p.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
+
     if args.list:
         list_devices()
         sys.exit(0)
-    asyncio.run(run(args.host, args.port, args.device))
+
+    if args.file:
+        asyncio.run(run_files(args.host, args.port, args.file, args.speed))
+    else:
+        asyncio.run(run_mic(args.host, args.port, args.device))
