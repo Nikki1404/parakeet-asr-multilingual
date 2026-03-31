@@ -11,6 +11,7 @@ Get "https://us-central1-docker.pkg.dev/v2/": read tcp 10.90.126.61:32810->74.12
 https://us-central1-docker.pkg.dev/v2/
 {"errors":[{"code":"UNAUTHORIZED","message":"not authenticated: No credential was supplied."}]}
 
+gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://us-central1-docker.pkg.dev
 
 unset http_proxy
 unset https_proxy
