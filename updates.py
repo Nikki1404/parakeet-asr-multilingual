@@ -12,8 +12,11 @@ https://us-central1-docker.pkg.dev/v2/
 {"errors":[{"code":"UNAUTHORIZED","message":"not authenticated: No credential was supplied."}]}
 
 gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://us-central1-docker.pkg.dev
-
+parakeet_asr_realtime
 find /home -name "*.json" | grep -i -E "key|service|gcp"
+
+re_nikitav@34.118.200.125:/home/re_nikitav/
+
 
 unset http_proxy
 unset https_proxy
