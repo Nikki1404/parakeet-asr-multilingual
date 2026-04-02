@@ -386,3 +386,68 @@ if __name__ == "__main__":
         asyncio.run(run_files(args.host, args.port, args.file, args.speed))
     else:
         asyncio.run(run_mic(args.host, args.port, args.device))
+
+
+
+WEBSOCKET_ADDRESS = "ws://192.168.4.15:8000/asr/realtime-custom-vad"
+        BACKEND = "nemotron"
+        TARGET_SR = 16000
+        event_queue = asyncio.Queue()
+
+        async with websockets.connect(WEBSOCKET_ADDRESS, max_size=None) as ws:
+            # 1. Send Initial Configuration
+            audio_config = {
+                "backend": BACKEND,
+                "sample_rate": TARGET_SR
+            }
+            await ws.send(json.dumps(audio_config))
+            logger.info("Send config to WS")
+
+            async def receive_task():
+                """Background task to listen for WebSocket messages."""
+                try:
+                    async for msg in ws:
+                        if isinstance(msg, str):
+                            obj = json.loads(msg)
+                            typ = obj.get("type")
+                            txt = obj.get("text", "")
+                            logger.info(f"Websocket recved msg: {txt}, type: {typ}")
+                            if typ == "partial":
+                                await event_queue.put(stt.SpeechEvent(
+                                    type=stt.SpeechEventType.INTERIM_TRANSCRIPT,
+                                    alternatives=[stt.SpeechData(text=txt, language="en")]
+                                ))
+                            elif typ == "final":
+                                await event_queue.put(stt.SpeechEvent(
+                                    type=stt.SpeechEventType.FINAL_TRANSCRIPT,
+                                    alternatives=[stt.SpeechData(text=txt, language="en")]
+                                ))
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+                finally:
+                    # Signal the generator that the stream is finished
+                    await event_queue.put(None)
+
+            async def send_task():
+                """Background task to stream audio frames to the WebSocket."""
+                try:
+                    async for frame in audio:
+                        await ws.send(frame.data.tobytes())
+                except Exception as e:
+                    logger.info("Error occured", e)
+
+            # Start the sender and receiver in the background
+            stask = asyncio.create_task(send_task())
+            rtask = asyncio.create_task(receive_task())
+
+            # Yield results as they arrive in the queue
+            try:
+                while True:
+                    event = await event_queue.get()
+                    if event is None:
+                        break
+                    yield event
+            finally:
+                # Cleanup tasks if the generator is closed early
+                stask.cancel()
+                rtask.cancel()
