@@ -1,327 +1,224 @@
-import argparse
 import asyncio
-import base64
-import json
-import time
-from pathlib import Path
-from datetime import datetime
-import subprocess
-import tempfile
-import wave
-
 import websockets
+import json
+import pyaudio
+import numpy as np
+import sys
 
+print('''After you are done with dev work please test the following:
+1. test for backend = "nemotron"
+2. test for backend = "google"
+3. test for backend = "whisper"
+4. test for the combination: backend = "nemotron" and TARGET_SR = 16000
+5. test for the combination: backend = "nemotron" and TARGET_SR = 8000
 
-# =========================================================
+---------------------
+STARTING TESTING
+---------------------
+
+''')
+
 # CONFIG
-# =========================================================
-SAMPLE_RATE = 16000
-BYTES_PER_SAMPLE = 2
+WEBSOCKET_ADDRESS = "ws://127.0.0.1:8002/asr/realtime-custom-vad"
+#WEBSOCKET_ADDRESS = "wss://cx-asr.exlservice.com/asr/realtime-custom-vad"
 
-SEND_CHUNK_SEC = 30
-SEND_CHUNK_BYTES = (
-    SAMPLE_RATE *
-    BYTES_PER_SAMPLE *
-    SEND_CHUNK_SEC
-)
+TARGET_SR = 16000
+CHANNELS = 1
 
-SUPPORTED_EXTENSIONS = {
-    ".mp3",
-    ".wav",
-    ".m4a",
-    ".flac"
-}
+CHUNK_MS = 80
+CHUNK_FRAMES = int(TARGET_SR * CHUNK_MS / 1000)
+SLEEP_SEC = CHUNK_MS / 1000.0
+
+# Whisper flush tuning
+WHISPER_FLUSH_INTERVAL_SEC = 0.35
+WHISPER_FLUSH_SILENCE_MS = 80
+
+websocket = None
+stream = None
+is_recording = False
+
+# NEW: track session start time for t_final
+session_start_time = None
 
 
-# =========================================================
-# AUDIO CONVERSION
-# =========================================================
-def convert_to_wav(src_path: Path, wav_path: Path):
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(src_path),
-            "-ar",
-            str(SAMPLE_RATE),
-            "-ac",
-            "1",
-            "-sample_fmt",
-            "s16",
-            str(wav_path)
-        ],
-        check=True,
-        capture_output=True
+# RECEIVE LOOP
+async def receive_data():
+    global session_start_time
+
+    try:
+        async for msg in websocket:
+            if isinstance(msg, str):
+                obj = json.loads(msg)
+                typ = obj.get("type")
+
+                if typ == "partial":
+                    txt = obj.get("text", "")
+                    t_start = obj.get("t_start")
+
+                    print(
+                        f"\r[PARTIAL] {txt[:120]} (t_start={t_start} ms)",
+                        end="",
+                        flush=True,
+                    )
+
+                elif typ == "final":
+                    txt = obj.get("text", "")
+                    t_start = obj.get("t_start")
+
+                    print(f"\n[FINAL] {txt}")
+
+                    now = asyncio.get_event_loop().time()
+
+                    if t_start is not None:
+                        # Nemotron metric
+                        latency_ms = t_start
+                        metric_name = "t_start"
+                    else:
+                        # Whisper / Google metric
+                        latency_ms = int((now - session_start_time) * 1000)
+                        metric_name = "t_final"
+
+                    print(f"[CLIENT] {metric_name}={latency_ms} ms")
+
+                else:
+                    print("[SERVER EVENT]", obj)
+
+    except websockets.exceptions.ConnectionClosed:
+        print("\nWebSocket closed")
+
+
+# CONNECT
+async def connect_websocket():
+    global websocket
+
+    websocket = await websockets.connect(
+        WEBSOCKET_ADDRESS,
+        max_size=None,
     )
 
-    with wave.open(str(wav_path), "rb") as wf:
-        duration_sec = (
-            wf.getnframes() /
-            wf.getframerate()
-        )
-
-    return duration_sec
+    print(f"Connected to {WEBSOCKET_ADDRESS}")
 
 
-# =========================================================
-# TRANSCRIBE ONE FILE
-# =========================================================
-async def transcribe_file(
-    filepath: Path,
-    base_url: str,
-    output_folder: Path
-):
-    print(f"\nSTARTING -> {filepath.name}")
+# SEND BACKEND CONFIG
+async def send_audio_config(backend: str):
 
-    ws_url = (
-        base_url
-        .replace("http://", "ws://")
-        .replace("https://", "wss://")
-        .rstrip("/")
-        + "/v1/realtime?intent=transcription"
+    audio_config = {
+        "backend": backend,
+        "sample_rate": TARGET_SR,
+    }
+
+    await websocket.send(json.dumps(audio_config))
+    print(f"Sent backend config: {backend}")
+
+
+# MIC START
+async def start_recording():
+    global stream, is_recording, session_start_time
+
+    p = pyaudio.PyAudio()
+
+    stream = p.open(
+        format=pyaudio.paInt16,
+        channels=CHANNELS,
+        rate=TARGET_SR,
+        input=True,
+        frames_per_buffer=CHUNK_FRAMES,
     )
 
-    print(f"WS URL -> {ws_url}")
+    # NEW: start timer
+    session_start_time = asyncio.get_event_loop().time()
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        wav_path = (
-            Path(tmpdir) /
-            f"{filepath.stem}.wav"
-        )
-
-        duration_sec = convert_to_wav(
-            filepath,
-            wav_path
-        )
-
-        transcript_parts = []
-        chunk_latencies = []
-        chunk_send_times = []
-
-        start_time = time.time()
-
-        async with websockets.connect(
-            ws_url,
-            ping_interval=20,
-            ping_timeout=60,
-            max_size=2**26
-        ) as ws:
-
-            # minimal config only
-            await ws.send(json.dumps({
-                "type": "transcription_session.update",
-                "session": {
-                    "input_audio_format": "pcm16",
-                    "input_audio_params": {
-                        "sample_rate_hz": SAMPLE_RATE,
-                        "num_channels": 1
-                    }
-                }
-            }))
-
-            async def sender():
-                with open(wav_path, "rb") as fh:
-                    # skip wav header
-                    fh.read(44)
-
-                    chunk_num = 0
-
-                    while True:
-                        chunk = fh.read(
-                            SEND_CHUNK_BYTES
-                        )
-
-                        if not chunk:
-                            break
-
-                        chunk_num += 1
-
-                        chunk_send_times.append(
-                            time.time()
-                        )
-
-                        await ws.send(json.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(
-                                chunk
-                            ).decode("utf-8")
-                        }))
-
-                        print(
-                            f"{filepath.name} | "
-                            f"SENT CHUNK {chunk_num}"
-                        )
-
-                await ws.send(json.dumps({
-                    "type": "input_audio_buffer.commit"
-                }))
-
-                await ws.send(json.dumps({
-                    "type": "input_audio_buffer.done"
-                }))
-
-            async def receiver():
-                response_num = 0
-
-                while True:
-                    try:
-                        raw = await asyncio.wait_for(
-                            ws.recv(),
-                            timeout=1800
-                        )
-
-                        msg = json.loads(raw)
-
-                        response_num += 1
-
-                        msg_type = msg.get(
-                            "type",
-                            ""
-                        )
-
-                        transcript = msg.get(
-                            "transcript",
-                            ""
-                        ).strip()
-
-                        is_final = msg_type.endswith(
-                            ".completed"
-                        )
-
-                        latency_ms = (
-                            time.time()
-                            - chunk_send_times[
-                                min(
-                                    response_num - 1,
-                                    len(chunk_send_times)-1
-                                )
-                            ]
-                        ) * 1000
-
-                        chunk_latencies.append({
-                            "response_num": response_num,
-                            "latency_ms": round(
-                                latency_ms, 2
-                            ),
-                            "is_final": is_final
-                        })
-
-                        if transcript and is_final:
-                            transcript_parts.append(
-                                transcript
-                            )
-
-                            print(
-                                f"{filepath.name} | "
-                                f"FINAL {response_num}"
-                            )
-
-                            if msg.get(
-                                "is_last_result",
-                                False
-                            ):
-                                break
-
-                    except asyncio.TimeoutError:
-                        print(
-                            f"{filepath.name} | timeout"
-                        )
-                        break
-
-            await asyncio.gather(
-                sender(),
-                receiver()
-            )
-
-        total_time_sec = (
-            time.time() - start_time
-        )
-
-        output_folder.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        transcript_path = (
-            output_folder /
-            f"{filepath.stem}_transcript.txt"
-        )
-
-        latency_path = (
-            output_folder /
-            f"{filepath.stem}_latency.json"
-        )
-
-        transcript_path.write_text(
-            "\n".join(transcript_parts),
-            encoding="utf-8"
-        )
-
-        latency_path.write_text(
-            json.dumps({
-                "audio_file": str(filepath),
-                "timestamp": datetime.now().isoformat(),
-                "audio_duration_sec": round(
-                    duration_sec, 2
-                ),
-                "total_processing_sec": round(
-                    total_time_sec, 2
-                ),
-                "chunk_latencies": chunk_latencies
-            }, indent=2),
-            encoding="utf-8"
-        )
-
-        print(f"SAVED -> {filepath.name}")
+    is_recording = True
+    print("Recording started (Ctrl+C to stop)")
 
 
-# =========================================================
-# BATCH
-# =========================================================
-async def run_batch(
-    base_url: str,
-    input_folder: Path,
-    output_folder: Path
-):
-    files = sorted([
-        f for f in input_folder.iterdir()
-        if f.suffix.lower()
-        in SUPPORTED_EXTENSIONS
-    ])
+# MIC STOP + EOS
+async def stop_recording():
+    global stream, is_recording
 
-    print(f"TOTAL FILES = {len(files)}")
+    is_recording = False
 
-    for file in files:
-        await transcribe_file(
-            file,
-            base_url,
-            output_folder
-        )
+    try:
+        # trailing silence
+        await websocket.send(b"\x00\x00" * int(TARGET_SR * 0.6))
+        await asyncio.sleep(0.5)
 
-    print("\nALL FILES COMPLETED")
+        # explicit EOS
+        await websocket.send(b"")
+
+    except Exception:
+        pass
+
+    if stream:
+        stream.stop_stream()
+        stream.close()
+
+    print("Recording stopped")
 
 
-# =========================================================
-# MAIN
-# =========================================================
-def parse_args():
-    parser = argparse.ArgumentParser()
+# MAIN LOOP
+async def main():
 
-    parser.add_argument("--base-url", required=True)
-    parser.add_argument("--input-folder", required=True)
-    parser.add_argument("--output-folder", required=True)
+    backend = "nemotron"
 
-    return parser.parse_args()
+    if len(sys.argv) > 1:
+        backend = sys.argv[1]
+
+    if backend not in ("nemotron", "whisper", "google"):
+        print("Usage: python client.py [nemotron|whisper|google]")
+        return
+
+    await connect_websocket()
+
+    await send_audio_config(backend)
+
+    await start_recording()
+
+    recv_task = asyncio.create_task(receive_data())
+
+    last_flush_time = asyncio.get_event_loop().time()
+
+    try:
+        while True:
+
+            data = stream.read(CHUNK_FRAMES, exception_on_overflow=False)
+
+            pcm = np.frombuffer(data, dtype=np.int16)
+
+            await websocket.send(pcm.tobytes())
+
+            # Whisper flush logic
+            if backend == "whisper":
+
+                now = asyncio.get_event_loop().time()
+
+                if now - last_flush_time >= WHISPER_FLUSH_INTERVAL_SEC:
+
+                    silence_frames = int(
+                        TARGET_SR * (WHISPER_FLUSH_SILENCE_MS / 1000.0)
+                    )
+
+                    silence = b"\x00\x00" * silence_frames
+
+                    await websocket.send(silence)
+
+                    last_flush_time = now
+
+            await asyncio.sleep(SLEEP_SEC)
+
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt")
+
+    finally:
+        await stop_recording()
+
+        recv_task.cancel()
+
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
-    args = parse_args()
-
-    asyncio.run(
-        run_batch(
-            args.base_url,
-            Path(args.input_folder),
-            Path(args.output_folder)
-        )
-    )
+    asyncio.run(main())
