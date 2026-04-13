@@ -222,3 +222,18 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
+[Unit]
+Description=Parakeet ASR Docker Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/docker start -a parakeet_asr_server
+ExecStop=/usr/bin/docker stop -t 10 parakeet_asr_server
+
+[Install]
+WantedBy=multi-user.target
