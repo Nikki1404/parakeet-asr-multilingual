@@ -232,8 +232,8 @@ Requires=docker.service
 
 [Service]
 Restart=always
-ExecStart=/usr/bin/docker start -a parakeet_asr_server
-ExecStop=/usr/bin/docker stop -t 10 parakeet_asr_server
+ExecStart=/usr/bin/docker start -a parakeet_asr_v3
+ExecStop=/usr/bin/docker stop -t 10 parakeet_asr_v3
 
 [Install]
 WantedBy=multi-user.target
