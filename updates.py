@@ -225,15 +225,10 @@ if __name__ == "__main__":
 
 
 
-[Unit]
-Description=Parakeet ASR Docker Service
-After=docker.service
-Requires=docker.service
-
-[Service]
-Restart=always
-ExecStart=/usr/bin/docker start -a parakeet_asr_v3
-ExecStop=/usr/bin/docker stop -t 10 parakeet_asr_v3
-
-[Install]
-WantedBy=multi-user.target
+numpy==1.26.4
+websockets==13.1
+PyAudio==0.2.14
+soundfile==0.12.1
+pydub==0.25.1
+librosa==0.10.2.post1
+scipy==1.14.1
