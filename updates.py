@@ -226,3 +226,8 @@ if __name__ == "__main__":
 
 
 us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-v3
+gcloud auth configure-docker us-central1-docker.pkg.dev
+docker tag parakeet_custom_vad:latest \
+us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-v3/parakeet_custom_vad:latest
+docker push \
+us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-v3/parakeet_custom_vad:latest
