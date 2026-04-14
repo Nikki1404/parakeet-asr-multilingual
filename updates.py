@@ -225,10 +225,4 @@ if __name__ == "__main__":
 
 
 
-numpy==1.26.4
-websockets==13.1
-PyAudio==0.2.14
-soundfile==0.12.1
-pydub==0.25.1
-librosa==0.10.2.post1
-scipy==1.14.1
+us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-v3
