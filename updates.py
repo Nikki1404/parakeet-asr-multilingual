@@ -227,7 +227,5 @@ if __name__ == "__main__":
 
 us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-es
 gcloud auth configure-docker us-central1-docker.pkg.dev
-docker tag parakeet_custom_vad:latest \
-us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-v3/parakeet_custom_vad:latest
-docker push \
-us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-v3/parakeet_custom_vad:latest
+docker tag nvcr.io/nim/nvidia/parakeet-ctc-0.6b-es:latest us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-es/parakeet-ctc-0.6b-es:0.0.1
+docker push us-central1-docker.pkg.dev/emr-dgt-autonomous-uctr1-snbx/asr-parakeet-es/parakeet-ctc-0.6b-es:0.0.1
